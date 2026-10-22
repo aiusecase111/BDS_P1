@@ -1,0 +1,241 @@
+===============================================================================
+ PRACTICAL 2: Containerizing a Node.js Application with Docker
+===============================================================================
+
+Objective:
+  Build a simple Node.js (Express) web application, write a Dockerfile for it,
+  build a Docker image, and run it as a container.
+
+
+
+===============================================================================
+ STEP 2: Initialize the Node.js Project
+===============================================================================
+
+Initialize a new Node.js project. This creates a package.json file.
+
+Command:
+  npm init -y
+
+
+===============================================================================
+ STEP 3: Install Express
+===============================================================================
+
+Install the Express web framework as a dependency.
+
+Command:
+  npm install express
+
+
+
+===============================================================================
+ STEP 5: Create the Node.js Server (server.js)
+===============================================================================
+
+This is the main application file. It creates an Express app that listens on
+port 3000 and responds with an HTML message at the root route ("/").
+
+File: server.js
+-------------------------------------------------------------------------------
+const express = require("express");
+
+const app = express();
+
+const PORT = 3000;
+
+app.get("/", (req, res) => {
+    res.send(`
+        <h1>Hello from Docker! 🐳</h1>
+        <p>This Node.js application is running inside a Docker container.</p>
+    `);
+});
+
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+});
+-------------------------------------------------------------------------------
+
+===============================================================================
+ STEP 6: Create the Dockerfile
+===============================================================================
+
+The Dockerfile contains instructions for building the Docker image.
+
+File: Dockerfile
+-------------------------------------------------------------------------------
+FROM node:20
+
+WORKDIR /app
+
+COPY package*.json ./
+
+RUN npm install
+
+COPY . .
+
+EXPOSE 3000
+
+CMD ["node", "server.js"]
+-------------------------------------------------------------------------------
+
+
+===============================================================================
+ STEP 7: Create .dockerignore
+===============================================================================
+
+The .dockerignore file prevents unnecessary files from being copied into the
+Docker image (similar to .gitignore for git).
+
+File: .dockerignore
+-------------------------------------------------------------------------------
+node_modules
+npm-debug.log
+.git
+.gitignore
+-------------------------------------------------------------------------------
+
+Why this matters:
+  - node_modules is excluded because npm install inside the container will
+    regenerate it. Copying your local node_modules would bloat the image and
+    could cause platform-specific issues (e.g., Windows binaries on a Linux
+    container).
+
+
+
+
+===============================================================================
+ STEP 9: Build the Docker Image
+===============================================================================
+
+Now build the Docker image from the Dockerfile.
+
+Command:
+  docker build -t prac_2 .
+
+Explanation:
+  - docker build     : The command to build an image from a Dockerfile.
+  - -t prac_2        : Tags (names) the image as "prac_2".
+  - .               : The build context (current directory).
+
+Expected output (abbreviated):
+  => [internal] load build definition from Dockerfile
+  => [internal] load .dockerignore
+  => [base] FROM node:20
+  => [1/4] FROM node:20
+  => [2/4] WORKDIR /app
+  => [3/4] COPY package*.json ./
+  => [4/4] RUN npm install
+  => exporting to image
+  => naming to docker.io/library/prac_2
+
+
+===============================================================================
+ STEP 10: Verify the Docker Image Was Created
+===============================================================================
+
+List all Docker images on your system to confirm the image exists.
+
+Command:
+  docker images
+
+Expected output:
+  REPOSITORY   TAG       IMAGE ID       CREATED          SIZE
+  prac_2       latest    <image_id>     <time>ago>       <size>
+
+
+===============================================================================
+ STEP 11: Run the Docker Container
+===============================================================================
+
+Run the Docker image as a container and map the container's port 3000 to
+port 3000 on your host machine.
+
+Command:
+  docker run -d -p 3000:3000 --name prac_2_container prac_2
+
+Explanation:
+  - docker run        : Create and start a new container.
+  - -d               : Run the container in detached mode (background).
+  - -p 3000:3000      : Map host port 3000 to container port 3000.
+  - --name prac_2_container : Give the container a recognizable name.
+  - prac_2           : The name of the image to run.
+
+
+===============================================================================
+ STEP 12: Verify the Container Is Running
+===============================================================================
+
+Check the status of running containers.
+
+Command:
+  docker ps
+
+Expected output:
+  CONTAINER ID   IMAGE   STATUS         PORTS                    NAMES
+  <id>           prac_2  Up <time>ago   0.0.0.0:3000->3000/tcp   prac_2_container
+
+
+===============================================================================
+ STEP 13: Test the Application in the Browser
+===============================================================================
+
+Open your web browser and navigate to:
+
+  http://localhost:3000
+
+You should see a page that displays:
+
+  Hello from Docker! 🐳
+  This Node.js application is running inside a Docker container.
+
+Alternatively, test from the command line:
+
+Command:
+  curl http://localhost:3000
+
+
+===============================================================================
+ STEP 14: View Container Logs (Optional)
+===============================================================================
+
+To see the console output from inside the container (e.g., the
+"Server running on port 3000" message):
+
+Command:
+  docker logs prac_2_container
+
+
+===============================================================================
+ STEP 15: Stop and Remove the Container (Cleanup)
+===============================================================================
+
+When you are done, stop and remove the container.
+
+Commands:
+  docker stop prac_2_container
+  docker rm prac_2_container
+
+To also remove the Docker image:
+
+Command:
+  docker rmi prac_2
+
+
+=================================================================================
+docker --version	--> Checks the installed Docker version to verify that Docker is installed.
+docker pull <image>	--> Downloads an image from Docker Hub to the local machine.
+docker images	--> Lists all downloaded Docker images available on the local machine.
+docker build -t <image_name>:<tag> .	--> Builds a Docker image from a Dockerfile in the current directory and assigns it a name and tag.
+docker rmi <image>	--> Removes a Docker image from the local machine. Dependent containers must be removed first.
+docker run <image>	Creates and starts a new container using the specified image.
+docker run -d -p <host_port>:<container_port> --name <name> <image>	--> Runs a container in the background, maps host and container ports, and assigns a custom name.
+docker ps	--> Displays currently running containers, their IDs, ports, and status.
+docker ps -a	--> Lists all containers, including running and stopped containers.
+docker stop <container_id>	--> Gracefully stops a running container.
+docker start <container_id> -->	Starts a previously stopped container.
+docker rm <container_id> -->	Removes a stopped container permanently.
+docker rm -f <container_id>	--> Forcefully removes a container, including a running container.
+docker logs <container_id> -->	Displays the logs generated by a container to help identify errors.
+docker logs -f <container_id>	--> Continuously displays new log entries in real time.
+docker exec -it <container_id> /bin/bash	--> Opens an interactive Bash shell inside a running container.
