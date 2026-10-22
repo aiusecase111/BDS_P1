@@ -1,0 +1,426 @@
+===============================================================================
+ MULTI-SERVICE DOCKER: Webpage with Frontend + Backend + Database
+===============================================================================
+
+Scenario:
+  You are asked to build a multi-page web application where different parts
+  (frontend, backend, database) run as separate Docker containers and
+  communicate with each other using Docker Compose.
+
+  Example Project: A simple Task Manager App
+    - Frontend  : HTML/CSS/JS served by Nginx
+    - Backend   : Node.js Express REST API
+    - Database  : MongoDB
+
+===============================================================================
+ FINAL PROJECT STRUCTURE
+===============================================================================
+
+  multi-service-app/
+    |-- docker-compose.yml
+    |-- frontend/
+    |     |-- Dockerfile
+    |     |-- index.html
+    |-- backend/
+    |     |-- Dockerfile
+    |     |-- server.js
+    |     |-- package.json
+    |     |-- .dockerignore
+    |-- db/
+          (no Dockerfile needed, we use the official MongoDB image)
+
+
+
+
+===============================================================================
+ STEP 2: Create the Frontend (HTML Page served by Nginx)
+===============================================================================
+
+This is a static HTML page that calls the backend API and displays tasks.
+
+File: frontend/index.html
+-------------------------------------------------------------------------------
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Task Manager</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            background: #f0f4f8;
+        }
+        h1 { color: #333; }
+        input {
+            padding: 8px;
+            width: 70%;
+            margin-right: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        button {
+            padding: 8px 16px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover { background: #0056b3; }
+        ul { list-style: none; padding: 0; margin-top: 20px; }
+        li {
+            background: white;
+            padding: 10px 14px;
+            margin: 8px 0;
+            border-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+    <h1>Task Manager 🐳</h1>
+    <p>Running across multiple Docker containers!</p>
+
+    <input type="text" id="taskInput" placeholder="Enter a new task..." />
+    <button onclick="addTask()">Add Task</button>
+
+    <ul id="taskList"></ul>
+
+    <script>
+        const API = "http://localhost:5000";
+
+        async function loadTasks() {
+            const res = await fetch(`${API}/tasks`);
+            const tasks = await res.json();
+            const list = document.getElementById("taskList");
+            list.innerHTML = "";
+            tasks.forEach(t => {
+                const li = document.createElement("li");
+                li.textContent = t.title;
+                list.appendChild(li);
+            });
+        }
+
+        async function addTask() {
+            const input = document.getElementById("taskInput");
+            const title = input.value.trim();
+            if (!title) return;
+            await fetch(`${API}/tasks`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ title })
+            });
+            input.value = "";
+            loadTasks();
+        }
+
+        loadTasks();
+    </script>
+</body>
+</html>
+-------------------------------------------------------------------------------
+
+File: frontend/Dockerfile
+-------------------------------------------------------------------------------
+FROM nginx:alpine
+
+COPY index.html /usr/share/nginx/html/index.html
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]
+-------------------------------------------------------------------------------
+
+Explanation:
+  - nginx:alpine     : Lightweight Nginx image to serve static HTML files.
+  - COPY index.html  : Copies our HTML page into the Nginx default serve folder.
+  - EXPOSE 80        : Nginx serves on port 80.
+
+
+===============================================================================
+ STEP 3: Create the Backend (Node.js Express API)
+===============================================================================
+
+File: backend/package.json
+-------------------------------------------------------------------------------
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "main": "server.js",
+  "type": "commonjs",
+  "dependencies": {
+    "express": "^4.18.2",
+    "mongoose": "^8.0.0",
+    "cors": "^2.8.5"
+  }
+}
+-------------------------------------------------------------------------------
+
+File: backend/server.js
+-------------------------------------------------------------------------------
+const express = require("express");
+const mongoose = require("mongoose");
+const cors = require("cors");
+
+const app = express();
+const PORT = 5000;
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+
+// Connect to MongoDB
+// "mongo" is the service name defined in docker-compose.yml
+mongoose.connect("mongodb://mongo:27017/taskdb")
+    .then(() => console.log("Connected to MongoDB"))
+    .catch(err => console.error("MongoDB connection error:", err));
+
+// Task Schema and Model
+const taskSchema = new mongoose.Schema({
+    title: { type: String, required: true },
+    createdAt: { type: Date, default: Date.now }
+});
+const Task = mongoose.model("Task", taskSchema);
+
+// Routes
+app.get("/tasks", async (req, res) => {
+    try {
+        const tasks = await Task.find().sort({ createdAt: -1 });
+        res.json(tasks);
+    } catch (err) {
+        res.status(500).json({ error: "Failed to fetch tasks" });
+    }
+});
+
+app.post("/tasks", async (req, res) => {
+    try {
+        const task = new Task({ title: req.body.title });
+        await task.save();
+        res.status(201).json(task);
+    } catch (err) {
+        res.status(400).json({ error: "Failed to create task" });
+    }
+});
+
+// Health check route
+app.get("/health", (req, res) => {
+    res.json({ status: "Backend is running!" });
+});
+
+app.listen(PORT, () => {
+    console.log(`Backend running on port ${PORT}`);
+});
+-------------------------------------------------------------------------------
+
+Explanation of backend code:
+  - cors()            : Allows the frontend (different port) to call this API.
+  - mongoose.connect  : Connects to MongoDB. Notice the hostname is "mongo" which
+                        is the SERVICE NAME from docker-compose, not localhost.
+  - Task Schema       : Defines the shape of data stored in MongoDB.
+  - GET /tasks        : Returns all tasks sorted by newest first.
+  - POST /tasks       : Accepts JSON body { title } and saves a new task.
+
+File: backend/.dockerignore
+-------------------------------------------------------------------------------
+node_modules
+npm-debug.log
+.git
+.gitignore
+-------------------------------------------------------------------------------
+
+File: backend/Dockerfile
+-------------------------------------------------------------------------------
+FROM node:20-alpine
+
+WORKDIR /app
+
+COPY package.json ./
+
+RUN npm install
+
+COPY . .
+
+EXPOSE 5000
+
+CMD ["node", "server.js"]
+-------------------------------------------------------------------------------
+
+Explanation:
+  - node:20-alpine    : Lighter version of the Node image (Alpine Linux).
+  - npm install       : Installs express, mongoose, and cors.
+  - EXPOSE 5000       : The backend API listens on port 5000.
+
+
+===============================================================================
+ STEP 4: Create docker-compose.yml (The Heart of Multi-Service Setup)
+===============================================================================
+
+This file defines all 3 services and how they connect to each other.
+
+File: docker-compose.yml (in the root multi-service-app/ folder)
+-------------------------------------------------------------------------------
+version: "3.9"
+
+services:
+
+  # ---- Service 1: Frontend (Nginx serving HTML) ----
+  frontend:
+    build: ./frontend
+    container_name: frontend_container
+    ports:
+      - "3000:80"         # Access at http://localhost:3000
+    depends_on:
+      - backend
+
+  # ---- Service 2: Backend (Node.js Express API) ----
+  backend:
+    build: ./backend
+    container_name: backend_container
+    ports:
+      - "5000:5000"       # Access at http://localhost:5000
+    depends_on:
+      - mongo
+    environment:
+      - NODE_ENV=production
+
+  # ---- Service 3: Database (MongoDB) ----
+  mongo:
+    image: mongo:6
+    container_name: mongo_container
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db   # Persist data even if container is removed
+
+volumes:
+  mongo_data:
+-------------------------------------------------------------------------------
+
+Explanation of docker-compose.yml:
+  - version: "3.9"    : The Docker Compose file format version.
+  - services          : Each named block (frontend, backend, mongo) is a container.
+  - build: ./frontend : Docker Compose will look for a Dockerfile in ./frontend
+                        and build an image from it.
+  - image: mongo:6    : Use the official MongoDB image directly (no Dockerfile).
+  - ports             : "HOST_PORT:CONTAINER_PORT" mapping.
+  - depends_on        : Ensures startup order (mongo starts before backend,
+                        backend starts before frontend).
+  - volumes           : mongo_data persists database files so data survives
+                        container restarts.
+  - environment       : Passes environment variables into the container.
+
+KEY CONCEPT - Service DNS:
+  In Docker Compose, services can talk to each other using the SERVICE NAME
+  as the hostname. That's why in server.js we write:
+    mongoose.connect("mongodb://mongo:27017/taskdb")
+  ...using "mongo" (the service name), NOT "localhost".
+
+
+===============================================================================
+ STEP 5: Build and Start All Services
+===============================================================================
+
+Run this single command from the root folder (multi-service-app/):
+
+Command:
+  docker-compose up --build
+
+Explanation:
+  - docker-compose up  : Starts all services defined in docker-compose.yml.
+  - --build            : Forces Docker to rebuild images even if they exist.
+                         Always use this when you change your code.
+
+To run in background (detached mode):
+
+Command:
+  docker-compose up --build -d
+
+
+===============================================================================
+ STEP 6: Verify All Containers Are Running
+===============================================================================
+
+Command:
+  docker-compose ps
+
+Expected output:
+  NAME                 IMAGE         STATUS      PORTS
+  frontend_container   frontend      Up          0.0.0.0:3000->80/tcp
+  backend_container    backend       Up          0.0.0.0:5000->5000/tcp
+  mongo_container      mongo:6       Up          0.0.0.0:27017->27017/tcp
+
+
+===============================================================================
+ STEP 7: Test the Application
+===============================================================================
+
+1. Open browser at:
+     http://localhost:3000
+   You will see the Task Manager webpage.
+
+2. Test the backend API health directly:
+     http://localhost:5000/health
+   Expected response: {"status":"Backend is running!"}
+
+3. Test the backend API for tasks:
+     http://localhost:5000/tasks
+   Expected response: [] (empty array initially)
+
+4. Add a task via the browser UI, then refresh /tasks to see it in MongoDB.
+
+Using curl to test the API:
+  - GET all tasks:
+    curl http://localhost:5000/tasks
+
+  - POST a new task:
+    curl -X POST http://localhost:5000/tasks \
+      -H "Content-Type: application/json" \
+      -d "{\"title\": \"Learn Docker\"}"
+
+
+===============================================================================
+ STEP 8: View Logs for Each Service
+===============================================================================
+
+View logs for all services:
+  Command:  docker-compose logs
+
+View logs for a specific service:
+  Command:  docker-compose logs backend
+  Command:  docker-compose logs frontend
+  Command:  docker-compose logs mongo
+
+Follow logs in real time:
+  Command:  docker-compose logs -f backend
+
+
+===============================================================================
+ STEP 9: Access a Running Container (Shell into it)
+===============================================================================
+
+If you need to debug inside a container:
+
+  docker exec -it backend_container sh
+  docker exec -it mongo_container bash
+
+
+===============================================================================
+ STEP 10: Stop, Remove Containers and Cleanup
+===============================================================================
+
+Stop all services (keeps containers and images):
+  Command:  docker-compose stop
+
+Stop AND remove containers + networks:
+  Command:  docker-compose down
+
+Stop AND remove containers + volumes (WARNING: deletes database data!):
+  Command:  docker-compose down -v
+
+Remove all built images too:
+  Command:  docker-compose down --rmi all
+
+
